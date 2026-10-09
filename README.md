@@ -8,6 +8,7 @@ The application calculates an explainable, deterministic privacy-risk score, ren
 
 ## Table of Contents
 
+- [Application Screenshots](#application-screenshots)
 - [Problem Statement & Objective](#problem-statement--objective)
 - [Key Features](#key-features)
 - [Detection Categories & Scoring Methodology](#detection-categories--scoring-methodology)
@@ -21,6 +22,30 @@ The application calculates an explainable, deterministic privacy-risk score, ren
 - [Security & Privacy Posture](#security--privacy-posture)
 - [Known Limitations](#known-limitations)
 - [Future Improvements](#future-improvements)
+
+---
+
+## Application Screenshots
+
+### 1. Security & Privacy Dashboard
+Interactive cybersecurity dashboard presenting total scan volume, risk severity breakdown (Low, Moderate, High, Critical), sensitive data threat category distributions, and recent audit logs.
+
+![Security & Privacy Dashboard](docs/screenshots/dashboard.png)
+
+### 2. Document Privacy Scanner
+Drag-and-drop file inspection interface supporting PDFs and images (PNG, JPG, JPEG) up to 5 MB with validation and local privacy processing guarantees, alongside the direct text scanner tab.
+
+![Document Privacy Scanner](docs/screenshots/scanner.png)
+
+### 3. Inspection Results & Masked Findings
+Comprehensive audit inspection screen featuring a deterministic 0–100 risk score dial, telemetry, category distribution breakdown, safe masked finding previews, confidence ratings, and actionable remediation guidance.
+
+![Inspection Results & Masked Findings](docs/screenshots/scan-results.png)
+
+### 4. Scan History & Audit Repository
+Searchable and filterable repository of past document scans with filename search, severity tier filtering, multiple sort options, finding counts, and direct PDF, CSV, and JSON export actions.
+
+![Scan History & Audit Repository](docs/screenshots/scan-history.png)
 
 ---
 
