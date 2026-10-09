@@ -1,0 +1,17 @@
+<header class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+  <a class="brand-mark fs-5" href="{{ url_for('web.index') }}">Data Leak Guardian</a>
+  <nav class="app-nav d-flex align-items-center gap-3 gap-md-4 flex-wrap" aria-label="Main navigation">
+    {% if current_user %}
+      <a href="{{ url_for('web.dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('web.history') }}">Scan history</a>
+      <span class="text-muted small">{{ current_user.name }}</span>
+      <form method="post" action="{{ url_for('web.logout') }}" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-secondary" type="submit">Log out</button>
+      </form>
+    {% else %}
+      <a href="{{ url_for('web.login') }}">Log in</a>
+      <a href="{{ url_for('web.register') }}">Register</a>
+    {% endif %}
+  </nav>
+</header>
