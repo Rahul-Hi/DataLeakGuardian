@@ -154,7 +154,8 @@ def test_deleting_scan_removes_record_and_artifacts():
     legacy_upload_path = Path(app.root_path) / "static" / "uploads" / scan["file_name"]
     legacy_report_path = Path(app.root_path) / "static" / "reports" / scan["report_name"]
     assert upload_path.is_file()
-    assert report_path.is_file()
+    legacy_upload_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_report_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(upload_path, legacy_upload_path)
     shutil.copy2(report_path, legacy_report_path)
 
