@@ -3,122 +3,324 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Data Leak Guardian - Results</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Analysis Result - Data Leak Guardian</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   </head>
   <body>
-    <main class="container page-container py-4 py-md-5">
-      {% include "_navigation.html" %}
+    {% include "_navigation.html" %}
 
-      <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body p-4">
-          <h1 class="page-title h3 mb-4">Analysis Result</h1>
+    <main class="container py-3 py-md-4">
+      <!-- Breadcrumb & Header -->
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+          <div class="d-flex align-items-center gap-2 small text-muted mb-1">
+            <a href="{{ url_for('web.dashboard') }}" class="text-decoration-none text-muted">Dashboard</a>
+            <span>›</span>
+            <span>Scan Inspection</span>
+          </div>
+          <h1 class="page-title h3 mb-0">Analysis Result</h1>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          {% if scan_id %}
+            <div class="btn-group">
+              <button type="button" class="btn btn-outline-secondary dropdown-toggle d-inline-flex align-items-center gap-2" data-bs-toggle="dropdown" aria-expanded="false">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Export Findings</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                <li><a class="dropdown-item d-flex align-items-center gap-2" href="{{ url_for('web.export_scan_csv', scan_id=scan_id) }}"><span>Export as CSV</span></a></li>
+                <li><a class="dropdown-item d-flex align-items-center gap-2" href="{{ url_for('web.export_scan_json', scan_id=scan_id) }}"><span>Export as JSON</span></a></li>
+                {% if report_name %}
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item d-flex align-items-center gap-2" href="{{ url_for('web.download_report', scan_id=scan_id) }}"><span>Download PDF Report</span></a></li>
+                {% endif %}
+              </ul>
+            </div>
+          {% endif %}
+          {% if report_name and scan_id %}
+            <a href="{{ url_for('web.download_report', scan_id=scan_id) }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" x2="12" y1="15" y2="3"/>
+              </svg>
+              <span>Download Privacy Report</span>
+            </a>
+          {% endif %}
+          <a href="{{ url_for('web.index') }}" class="btn btn-outline-secondary">
+            Upload another file
+          </a>
+        </div>
+      </div>
 
-          <div class="row g-3">
-            <div class="col-md-6">
-              <div class="small text-muted">Uploaded filename</div>
-              <div class="fw-semibold">{{ file_name }}</div>
+      <!-- Executive Risk Overview & Score Visualization -->
+      <div class="row g-4 mb-4">
+        <!-- Prominent Score Gauge Column -->
+        <div class="col-12 col-md-5 col-lg-4">
+          <div class="card h-100 text-center">
+            <div class="card-body d-flex flex-column align-items-center justify-content-center p-4">
+              <div class="small text-muted fw-bold text-uppercase mb-2">Total risk score</div>
+              
+              <!-- Circular SVG Score Visualization -->
+              {% set score = total_score|int %}
+              {% set stroke_color = 'var(--risk-low-accent)' if score <= 24 else 'var(--risk-moderate-accent)' if score <= 49 else 'var(--risk-high-accent)' if score <= 74 else 'var(--risk-critical-accent)' %}
+              {% set stroke_dash = (score / 100 * 283)|round|int %}
+              
+              <div class="position-relative d-inline-flex align-items-center justify-content-center my-2" style="width: 150px; height: 150px;">
+                <svg width="150" height="150" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="45" fill="none" stroke="#e2e8f0" stroke-width="8"/>
+                  <circle cx="50" cy="50" r="45" fill="none" stroke="{{ stroke_color }}" stroke-width="8"
+                          stroke-dasharray="283" stroke-dashoffset="{{ 283 - stroke_dash }}"
+                          stroke-linecap="round" transform="rotate(-90 50 50)"/>
+                </svg>
+                <div class="position-absolute text-center">
+                  <div class="fw-bold fs-1 lh-1" style="color: {{ stroke_color }};">{{ total_score }}</div>
+                  <div class="text-muted small">/ 100</div>
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <div class="small text-muted mb-1">Risk level</div>
+                <span class="badge risk-badge fs-6 {{ 'text-bg-success' if risk_level == 'Low' else 'text-bg-warning' if risk_level == 'Moderate' else 'risk-high' if risk_level == 'High' else 'text-bg-danger' }}">
+                  {{ risk_level }}
+                </span>
+              </div>
             </div>
-            <div class="col-md-6">
-              <div class="small text-muted">File type</div>
-              <div class="fw-semibold">{{ file_type }}</div>
+          </div>
+        </div>
+
+        <!-- Document Metadata & Quick Insights -->
+        <div class="col-12 col-md-7 col-lg-8">
+          <div class="card h-100">
+            <div class="card-header-clean">
+              <div class="d-flex align-items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <span>Document Telemetry</span>
+              </div>
             </div>
-            <div class="col-md-6">
-              <div class="small text-muted">Total risk score</div>
-              <div class="fw-semibold fs-4">{{ total_score }}</div>
-            </div>
-            <div class="col-md-6">
-              <div class="small text-muted">Risk level</div>
-              <div class="mt-1">
-                <span class="badge risk-badge {{ 'text-bg-success' if risk_level == 'Low' else 'text-bg-warning' if risk_level == 'Moderate' else 'risk-high' if risk_level == 'High' else 'text-bg-danger' }}">{{ risk_level }}</span>
+            <div class="card-body">
+              <div class="row g-3 mb-4">
+                <div class="col-sm-6">
+                  <div class="small text-muted mb-1">Uploaded filename</div>
+                  <div class="fw-bold fs-6 text-truncate" title="{{ file_name }}">{{ file_name }}</div>
+                </div>
+                <div class="col-sm-3 col-6">
+                  <div class="small text-muted mb-1">File type</div>
+                  <div><span class="badge bg-light text-dark border">{{ file_type }}</span></div>
+                </div>
+                <div class="col-sm-3 col-6">
+                  <div class="small text-muted mb-1">Total findings</div>
+                  <div><span class="badge {{ 'bg-danger' if finding_count > 0 else 'bg-success' }}">{{ finding_count }} item{{ 's' if finding_count != 1 else '' }}</span></div>
+                </div>
+              </div>
+
+              <div class="border-top pt-3">
+                <div class="small text-muted fw-bold text-uppercase mb-2">Detected sensitive categories</div>
+                {% if detected_categories %}
+                  <div class="d-flex flex-wrap gap-2">
+                    {% for category in detected_categories %}
+                      <span class="category-pill">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-teal" style="color: var(--guardian-teal);" aria-hidden="true">
+                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                        <span>{{ category.replace('_', ' ').title() }}</span>
+                      </span>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p class="mb-0 text-muted small">No sensitive categories detected.</p>
+                {% endif %}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body p-4">
-          <h4 class="mb-3">Detected categories</h4>
-          {% if detected_categories %}
-            <div class="d-flex flex-wrap gap-2">
-              {% for category in detected_categories %}
-                <span class="badge text-bg-light border text-dark">{{ category }}</span>
-              {% endfor %}
-            </div>
-          {% else %}
-            <p class="mb-0 text-muted">No sensitive categories detected.</p>
-          {% endif %}
+      <!-- Masked Findings Table -->
+      <section class="card mb-4" aria-labelledby="findings-heading">
+        <div class="card-header-clean">
+          <div class="d-flex align-items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary" aria-hidden="true">
+              <rect width="18" height="18" x="3" y="3" rx="2"/>
+              <path d="M7 7h.01"/>
+              <path d="M17 7h.01"/>
+              <path d="M7 17h.01"/>
+              <path d="M17 17h.01"/>
+            </svg>
+            <h2 id="findings-heading" class="h6 mb-0 fw-bold">Findings (Masked)</h2>
+          </div>
+          <span class="badge bg-light text-muted border">Number of findings: {{ finding_count }}</span>
         </div>
-      </div>
-
-      <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body p-4">
-          <h4 class="mb-3">Findings</h4>
-          <div class="small text-muted mb-2">Number of findings: {{ finding_count }}</div>
+        <div class="card-body p-0">
           {% if findings %}
             <div class="table-responsive">
-              <table class="table table-hover align-middle findings-table">
-                <thead><tr><th>Category</th><th>Masked value</th><th>Confidence</th></tr></thead>
+              <table class="table table-hover align-middle findings-table mb-0">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Masked value</th>
+                    <th>Context Preview</th>
+                    <th>Confidence</th>
+                    <th>Evidence</th>
+                  </tr>
+                </thead>
                 <tbody>
-              {% for item in findings %}
+                  {% for item in findings %}
                     <tr>
-                      <th scope="row" class="text-capitalize">{{ item.type|replace('_', ' ') }}</th>
-                      <td class="result-value">{{ item.value }}</td>
-                      <td>{{ '%.0f'|format(item.confidence * 100) }}%</td>
+                      <th scope="row" class="text-capitalize text-nowrap">
+                        <span class="badge bg-light text-dark border">{{ item.type|replace('_', ' ') }}</span>
+                      </th>
+                      <td>
+                        <span class="result-value">{{ item.value }}</span>
+                      </td>
+                      <td>
+                        {% if item.context_snippet %}
+                          <div class="small font-monospace text-muted py-1 px-2 rounded bg-light border-start border-3 border-teal text-break" style="max-width: 28rem; border-color: var(--guardian-teal) !important;">
+                            {{ item.context_snippet }}
+                          </div>
+                        {% else %}
+                          <span class="text-muted small">—</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <div class="d-flex align-items-center gap-2">
+                          <div class="progress flex-grow-1" style="height: 6px; width: 55px;">
+                            <div class="progress-bar bg-teal" style="width: {{ '%.0f'|format(item.confidence * 100) }}%; background-color: var(--guardian-teal);"></div>
+                          </div>
+                          <span class="small fw-semibold">{{ '%.0f'|format(item.confidence * 100) }}%</span>
+                        </div>
+                      </td>
+                      <td class="text-muted small">
+                        {{ item.evidence if item.evidence else 'Matched rule pattern' }}
+                      </td>
                     </tr>
-              {% endfor %}
+                  {% endfor %}
                 </tbody>
               </table>
             </div>
           {% else %}
-            <p class="mb-0 text-muted">No findings detected.</p>
+            <div class="p-4 text-center text-muted">
+              <p class="mb-0">No sensitive findings detected in this document.</p>
+            </div>
           {% endif %}
         </div>
-      </div>
+      </section>
 
-      <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body p-4">
-          <h4 class="mb-3">Score contribution by category</h4>
-          {% if category_contributions %}
-            <ul class="list-group list-group-flush">
-              {% for category, contribution in category_contributions.items() %}
-                {% if contribution > 0 %}
-                  <li class="list-group-item d-flex justify-content-between">
-                    <span>{{ category }}</span>
-                    <strong>{{ contribution }}</strong>
-                  </li>
-                {% endif %}
-              {% endfor %}
-            </ul>
-          {% else %}
-            <p class="mb-0 text-muted">No score contribution.</p>
-          {% endif %}
+      <!-- Actionable Remediation Guidance -->
+      <section class="card mb-4" aria-labelledby="remediation-heading">
+        <div class="card-header-clean">
+          <div class="d-flex align-items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-teal" style="color: var(--guardian-teal);" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <path d="m9 12 2 2 4-4"/>
+            </svg>
+            <h2 id="remediation-heading" class="h6 mb-0 fw-bold">Actionable Remediation & Redaction Guidance</h2>
+          </div>
+          <span class="badge bg-light text-muted border">Compliance Safeguards</span>
         </div>
-      </div>
-
-      <div class="card shadow-sm border-0 mb-4">
-        <div class="card-body p-4">
-          <h2 class="h5 mb-3">Why this score?</h2>
-          <ul class="mb-0">
-            {% for explanation in explanations %}
-              <li>{{ explanation }}</li>
+        <div class="card-body">
+          <div class="row g-3">
+            {% for item in remediations %}
+              <div class="col-12 col-md-6">
+                <div class="p-3 border rounded bg-light h-100 d-flex gap-3 align-items-start">
+                  <div class="text-teal mt-1 flex-shrink-0" style="color: var(--guardian-teal);" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 14 14"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <span class="small text-dark fw-semibold d-block">{{ item }}</span>
+                  </div>
+                </div>
+              </div>
             {% endfor %}
-          </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Score Contributions & Risk Explanations -->
+      <div class="row g-4 mb-4">
+        <!-- Score Contribution by Category -->
+        <div class="col-12 col-md-5">
+          <div class="card h-100">
+            <div class="card-header-clean">
+              <h3 class="h6 mb-0 fw-bold">Score contribution by category</h3>
+            </div>
+            <div class="card-body">
+              {% if category_contributions %}
+                <ul class="list-group list-group-flush">
+                  {% for category, contribution in category_contributions.items() %}
+                    {% if contribution > 0 %}
+                      <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                        <span class="text-capitalize">{{ category.replace('_', ' ') }}</span>
+                        <span class="badge bg-light text-dark border fw-bold">+{{ contribution }} pts</span>
+                      </li>
+                    {% endif %}
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="mb-0 text-muted small">No score contribution.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Explanations: Why this score? -->
+        <div class="col-12 col-md-7">
+          <div class="card h-100">
+            <div class="card-header-clean">
+              <div class="d-flex align-items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <h3 class="h6 mb-0 fw-bold">Why this score?</h3>
+              </div>
+            </div>
+            <div class="card-body">
+              <ul class="list-unstyled mb-0 d-flex flex-column gap-2">
+                {% for explanation in explanations %}
+                  <li class="d-flex align-items-start gap-2 small">
+                    <span class="text-teal mt-1" style="color: var(--guardian-teal);" aria-hidden="true">▪</span>
+                    <span>{{ explanation }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="text-center d-flex justify-content-center gap-3 flex-wrap">
+      <!-- Action Footer -->
+      <div class="text-center d-flex justify-content-center gap-3 flex-wrap pt-3 border-top">
         {% if report_name and scan_id %}
-          <a href="{{ url_for('web.download_report', scan_id=scan_id) }}" class="btn btn-success">Download Privacy Report</a>
+          <a href="{{ url_for('web.download_report', scan_id=scan_id) }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" x2="12" y1="15" y2="3"/>
+            </svg>
+            <span>Download Privacy Report</span>
+          </a>
         {% endif %}
         {% if scan_id %}
           <a href="{{ url_for('web.history') }}" class="btn btn-outline-secondary">Scan history</a>
         {% endif %}
         <a href="{{ url_for('web.dashboard') }}" class="btn btn-outline-secondary">Dashboard</a>
-        <a href="{{ url_for('web.index') }}" class="btn btn-primary">Upload another file</a>
+        <a href="{{ url_for('web.index') }}" class="btn btn-outline-secondary">Upload another file</a>
       </div>
     </main>
+
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}" defer></script>
   </body>
 </html>

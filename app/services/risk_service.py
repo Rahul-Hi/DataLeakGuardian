@@ -21,6 +21,28 @@ RISK_LEVELS = [
 ]
 
 
+REMEDIATION_GUIDELINES = {
+    "aadhaar": "Aadhaar / National ID: Mask the first 8 digits (e.g. XXXX XXXX 1234) per UIDAI regulations before distributing or archiving.",
+    "pan": "PAN Tax Identifier: Redact Permanent Account Numbers from non-tax documents to prevent financial identity exposure.",
+    "bank_account": "Bank Account Number: Obfuscate to the last 4 digits (e.g. XXXXXXXX1234) in compliance with PCI-DSS and banking security guidelines.",
+    "ifsc": "IFSC Code: Remove branch routing codes when coupled with account holder data to prevent financial fraud targeting.",
+    "phone": "Personal Phone Number: Mask contact digits to mitigate spamming, smishing, and unauthorized social engineering.",
+    "email": "Email Address: Sanitize or partially mask email handles (e.g. us***@domain.com) in shared public documents to avoid spear-phishing.",
+    "dob": "Date of Birth: Obfuscate full birth dates (retain year only if required) to prevent identity verification bypasses.",
+    "pin": "Postal PIN Code: Remove precise postal location codes if paired with identity details to avoid geographic profiling.",
+}
+
+
+def get_remediations_for_categories(categories):
+    remediations = []
+    for cat in categories:
+        if cat in REMEDIATION_GUIDELINES:
+            remediations.append(REMEDIATION_GUIDELINES[cat])
+    if not remediations:
+        remediations.append("No immediate remediation required: Document appears clean of supported sensitive categories.")
+    return remediations
+
+
 def _risk_level_for(score):
     for lower, upper, label in RISK_LEVELS:
         if lower <= score <= upper:
@@ -73,10 +95,14 @@ def calculate_privacy_risk(text_or_findings):
     if not explanations:
         explanations.append("No sensitive findings were detected.")
 
+    active_categories = [cat for cat in WEIGHTS if category_summary.get(cat, 0) > 0]
+    remediations = get_remediations_for_categories(active_categories)
+
     return {
         "total_score": total_score,
         "risk_level": risk_level,
         "detected_category_summary": category_summary,
         "score_contribution_of_each_category": category_contributions,
         "explanations": explanations,
+        "remediations": remediations,
     }

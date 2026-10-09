@@ -89,5 +89,12 @@ def generate_privacy_report(document_name, file_type, risk_result, findings=None
     for explanation in risk_result.get("explanations", ["No sensitive findings were detected."]):
         content.append(Paragraph(f"- {explanation}", body_style))
 
+    remediations = risk_result.get("remediations", [])
+    if remediations:
+        content.append(Spacer(1, 0.2 * inch))
+        content.append(Paragraph("Recommended Remediation Actions", heading_style))
+        for action in remediations:
+            content.append(Paragraph(f"• {action}", body_style))
+
     doc.build(content)
     return report_name

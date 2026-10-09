@@ -75,3 +75,17 @@ def test_detects_sensitive_data_in_extracted_text_from_pdf(sample_dir):
     detected = {item["type"] for item in findings}
     assert "aadhaar" in detected
     assert "email" in detected
+
+
+def test_detects_contextual_snippets():
+    text = "Account record verification. Email: user.leak@company.org in employee database."
+    findings = detect_sensitive_data(text)
+
+    email_findings = [f for f in findings if f["type"] == "email"]
+    assert len(email_findings) == 1
+    item = email_findings[0]
+    assert "context_snippet" in item
+    assert "[MATCH]" in item["context_snippet"]
+    assert "Email:" in item["context_snippet"]
+    assert "employee" in item["context_snippet"]
+

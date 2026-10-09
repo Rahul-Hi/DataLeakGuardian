@@ -108,3 +108,24 @@ def test_risk_level_boundaries(score, expected_level):
         assert result["risk_level"] == "Critical"
     elif score == 100:
         assert result["risk_level"] == "Critical"
+
+
+def test_remediation_guidance_for_detected_categories():
+    findings = [
+        {"type": "aadhaar", "value": "1234 5678 9012", "position": 10, "confidence": 0.95, "evidence": "ID match"},
+        {"type": "bank_account", "value": "123456789012", "position": 50, "confidence": 0.88, "evidence": "Account match"},
+    ]
+    result = calculate_privacy_risk(findings)
+
+    assert "remediations" in result
+    remediations = result["remediations"]
+    assert len(remediations) == 2
+    assert any("Aadhaar" in r or "UIDAI" in r for r in remediations)
+    assert any("Bank Account" in r or "PCI-DSS" in r for r in remediations)
+
+
+def test_remediation_guidance_for_clean_document():
+    result = calculate_privacy_risk([])
+    assert "remediations" in result
+    assert any("clean" in r.lower() or "no immediate" in r.lower() for r in result["remediations"])
+

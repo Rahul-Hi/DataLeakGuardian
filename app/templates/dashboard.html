@@ -4,66 +4,277 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dashboard - Data Leak Guardian</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   </head>
   <body>
-    <main class="container py-4 py-md-5">
-      {% include "_navigation.html" %}
+    {% include "_navigation.html" %}
 
-      <h1 class="page-title h3 mb-4">Privacy Dashboard</h1>
-      <section class="row g-3 mb-5" aria-label="Scan statistics">
+    <main class="container py-3 py-md-4">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+          <h1 class="page-title h3 mb-1">Privacy Dashboard</h1>
+          <p class="page-subtitle mb-0">Overview of sensitive data exposures and document risk telemetry</p>
+        </div>
+        <div>
+          <a href="{{ url_for('web.index') }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" x2="12" y1="3" y2="15"/>
+            </svg>
+            <span>Start a scan</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- KPI Stat Cards -->
+      <section class="row g-3 mb-4" aria-label="Scan statistics">
         <div class="col-6 col-lg">
-          <div class="card stat-card h-100"><div class="card-body">
-            <div class="small text-muted mb-2">Total documents scanned</div><div class="stat-value">{{ stats.total or 0 }}</div>
-          </div></div>
+          <div class="card stat-card stat-total h-100">
+            <div class="card-body">
+              <div class="small text-muted mb-2">Total documents scanned</div><div class="stat-value">{{ stats.total or 0 }}</div>
+            </div>
+          </div>
         </div>
         <div class="col-6 col-lg">
-          <div class="card stat-card h-100"><div class="card-body">
-            <div class="small text-muted mb-2">Low risk</div><div class="stat-value text-success">{{ stats.low }}</div>
-          </div></div>
+          <div class="card stat-card stat-low h-100">
+            <div class="card-body">
+              <div class="small text-muted mb-2">Low risk</div><div class="stat-value text-success">{{ stats.low }}</div>
+            </div>
+          </div>
         </div>
         <div class="col-6 col-lg">
-          <div class="card stat-card h-100"><div class="card-body">
-            <div class="small text-muted mb-2">Moderate risk</div><div class="stat-value text-warning-emphasis">{{ stats.moderate }}</div>
-          </div></div>
+          <div class="card stat-card stat-moderate h-100">
+            <div class="card-body">
+              <div class="small text-muted mb-2">Moderate risk</div><div class="stat-value text-warning-emphasis">{{ stats.moderate }}</div>
+            </div>
+          </div>
         </div>
         <div class="col-6 col-lg">
-          <div class="card stat-card h-100"><div class="card-body">
-            <div class="small text-muted mb-2">High risk</div><div class="stat-value risk-high-text">{{ stats.high }}</div>
-          </div></div>
+          <div class="card stat-card stat-high h-100">
+            <div class="card-body">
+              <div class="small text-muted mb-2">High risk</div><div class="stat-value risk-high-text">{{ stats.high }}</div>
+            </div>
+          </div>
         </div>
         <div class="col-6 col-lg">
-          <div class="card stat-card h-100"><div class="card-body">
-            <div class="small text-muted mb-2">Critical risk</div><div class="stat-value text-danger">{{ stats.critical }}</div>
-          </div></div>
+          <div class="card stat-card stat-critical h-100">
+            <div class="card-body">
+              <div class="small text-muted mb-2">Critical risk</div><div class="stat-value text-danger">{{ stats.critical }}</div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section aria-labelledby="recent-heading">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h2 id="recent-heading" class="h4 mb-0">Recent scans</h2>
-          <a href="{{ url_for('web.history') }}">View all</a>
-        </div>
-        {% if recent_scans %}
-          <div class="table-responsive">
-            <table class="table table-hover align-middle recent-table">
-              <thead><tr><th>Filename</th><th>Date</th><th>Score</th><th>Risk</th><th>Findings</th><th></th></tr></thead>
-              <tbody>
-                {% for scan in recent_scans %}
-                  <tr>
-                    <td class="filename-cell">{{ scan.original_name }}</td><td>{{ scan.uploaded_at }}</td><td>{{ scan.total_score }}</td>
-                    <td><span class="badge risk-badge {{ 'text-bg-success' if scan.risk_level == 'Low' else 'text-bg-warning' if scan.risk_level == 'Moderate' else 'risk-high' if scan.risk_level == 'High' else 'text-bg-danger' }}">{{ scan.risk_level }}</span></td>
-                    <td>{{ scan.finding_count }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('web.view_scan', scan_id=scan.id) }}">View</a></td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+      <!-- Analytics Section: Risk Distribution & Category Threat Telemetry -->
+      <div class="row g-4 mb-4">
+        <!-- Risk Distribution -->
+        <div class="col-12 col-lg-5">
+          <div class="card h-100">
+            <div class="card-header-clean">
+              <div class="d-flex align-items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary" aria-hidden="true">
+                  <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+                  <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+                </svg>
+                <span>Risk Distribution</span>
+              </div>
+            </div>
+            <div class="card-body">
+              {% if (stats.total or 0) > 0 %}
+                {% set total = stats.total %}
+                {% set low_pct = ((stats.low / total) * 100)|round|int %}
+                {% set mod_pct = ((stats.moderate / total) * 100)|round|int %}
+                {% set high_pct = ((stats.high / total) * 100)|round|int %}
+                {% set crit_pct = ((stats.critical / total) * 100)|round|int %}
+
+                <div class="distribution-bar mb-3" role="progressbar" aria-label="Risk exposure proportion">
+                  {% if stats.low > 0 %}<div class="distribution-segment segment-low" style="width: {{ low_pct }}%;" title="Low: {{ stats.low }}"></div>{% endif %}
+                  {% if stats.moderate > 0 %}<div class="distribution-segment segment-moderate" style="width: {{ mod_pct }}%;" title="Moderate: {{ stats.moderate }}"></div>{% endif %}
+                  {% if stats.high > 0 %}<div class="distribution-segment segment-high" style="width: {{ high_pct }}%;" title="High: {{ stats.high }}"></div>{% endif %}
+                  {% if stats.critical > 0 %}<div class="distribution-segment segment-critical" style="width: {{ crit_pct }}%;" title="Critical: {{ stats.critical }}"></div>{% endif %}
+                </div>
+
+                <div class="d-flex flex-column gap-2 mt-3">
+                  <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light">
+                    <span class="d-flex align-items-center gap-2 small fw-semibold text-success">
+                      <span class="d-inline-block rounded-circle" style="width: 8px; height: 8px; background-color: var(--risk-low-accent);"></span>
+                      Low Risk (0-24)
+                    </span>
+                    <span class="small fw-bold">{{ stats.low }} <span class="text-muted fw-normal">({{ low_pct }}%)</span></span>
+                  </div>
+                  <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light">
+                    <span class="d-flex align-items-center gap-2 small fw-semibold text-warning-emphasis">
+                      <span class="d-inline-block rounded-circle" style="width: 8px; height: 8px; background-color: var(--risk-moderate-accent);"></span>
+                      Moderate Risk (25-49)
+                    </span>
+                    <span class="small fw-bold">{{ stats.moderate }} <span class="text-muted fw-normal">({{ mod_pct }}%)</span></span>
+                  </div>
+                  <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light">
+                    <span class="d-flex align-items-center gap-2 small fw-semibold risk-high-text">
+                      <span class="d-inline-block rounded-circle" style="width: 8px; height: 8px; background-color: var(--risk-high-accent);"></span>
+                      High Risk (50-74)
+                    </span>
+                    <span class="small fw-bold">{{ stats.high }} <span class="text-muted fw-normal">({{ high_pct }}%)</span></span>
+                  </div>
+                  <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light">
+                    <span class="d-flex align-items-center gap-2 small fw-semibold text-danger">
+                      <span class="d-inline-block rounded-circle" style="width: 8px; height: 8px; background-color: var(--risk-critical-accent);"></span>
+                      Critical Risk (75-100)
+                    </span>
+                    <span class="small fw-bold">{{ stats.critical }} <span class="text-muted fw-normal">({{ crit_pct }}%)</span></span>
+                  </div>
+                </div>
+              {% else %}
+                <div class="text-center py-4 text-muted">
+                  <p class="small mb-0">No scans recorded yet to compute risk distribution.</p>
+                </div>
+              {% endif %}
+            </div>
           </div>
-        {% else %}
-          <p class="text-muted">No completed scans yet.</p>
-        {% endif %}
+        </div>
+
+        <!-- Sensitive Data Category Breakdown -->
+        <div class="col-12 col-lg-7">
+          <div class="card h-100">
+            <div class="card-header-clean">
+              <div class="d-flex align-items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary" aria-hidden="true">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span>Sensitive Data Threat Breakdown</span>
+              </div>
+              <span class="badge text-bg-light border text-muted small">All-Time Scans</span>
+            </div>
+            <div class="card-body">
+              {% set cat_labels = {
+                'aadhaar': 'Aadhaar (UIDAI)',
+                'pan': 'PAN (Tax ID)',
+                'bank_account': 'Bank Account Numbers',
+                'ifsc': 'IFSC Financial Codes',
+                'phone': 'Phone / Mobile Numbers',
+                'email': 'Email Addresses',
+                'dob': 'Dates of Birth',
+                'pin': 'Postal PIN Codes'
+              } %}
+
+              {% set max_cnt = [1] %}
+              {% if category_totals %}
+                {% for k, v in category_totals.items() %}
+                  {% if v > max_cnt[0] %}{% set _ = max_cnt.pop() %}{% set _ = max_cnt.append(v) %}{% endif %}
+                {% endfor %}
+              {% endif %}
+
+              <div class="row g-3">
+                {% for cat_key, cat_name in cat_labels.items() %}
+                  {% set cnt = category_totals.get(cat_key, 0) if category_totals else 0 %}
+                  {% set bar_width = ((cnt / max_cnt[0]) * 100)|round|int if max_cnt[0] > 0 and cnt > 0 else 0 %}
+                  <div class="col-12 col-md-6">
+                    <div class="p-2 border rounded bg-white">
+                      <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small fw-semibold text-truncate" title="{{ cat_name }}">{{ cat_name }}</span>
+                        <span class="badge {{ 'bg-teal text-white' if cnt > 0 else 'bg-light text-muted border' }}" style="{{ 'background-color: var(--guardian-teal);' if cnt > 0 else '' }}">
+                          {{ cnt }} detected
+                        </span>
+                      </div>
+                      <div class="threat-progress-bar">
+                        <div class="threat-progress-fill" style="width: {{ bar_width }}%;"></div>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Scans Section -->
+      <section class="card" aria-labelledby="recent-heading">
+        <div class="card-header-clean">
+          <div class="d-flex align-items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <h2 id="recent-heading" class="h6 mb-0 fw-bold">Recent scans</h2>
+          </div>
+          {% if recent_scans %}
+            <a href="{{ url_for('web.history') }}" class="btn btn-sm btn-outline-secondary">View all history</a>
+          {% endif %}
+        </div>
+
+        <div class="card-body p-0">
+          {% if recent_scans %}
+            <div class="table-responsive">
+              <table class="table table-hover align-middle recent-table mb-0">
+                <thead>
+                  <tr>
+                    <th>Filename</th>
+                    <th>Date</th>
+                    <th>Score</th>
+                    <th>Risk</th>
+                    <th>Findings</th>
+                    <th class="text-end">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for scan in recent_scans %}
+                    <tr>
+                      <td class="filename-cell">
+                        <div class="d-flex align-items-center gap-2">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted" aria-hidden="true">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                          </svg>
+                          <span>{{ scan.original_name }}</span>
+                        </div>
+                      </td>
+                      <td class="text-muted small">{{ scan.uploaded_at }}</td>
+                      <td>
+                        <span class="fw-bold">{{ scan.total_score }}</span><span class="text-muted small">/100</span>
+                      </td>
+                      <td>
+                        <span class="badge risk-badge {{ 'text-bg-success' if scan.risk_level == 'Low' else 'text-bg-warning' if scan.risk_level == 'Moderate' else 'risk-high' if scan.risk_level == 'High' else 'text-bg-danger' }}">
+                          {{ scan.risk_level }}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="badge bg-light text-dark border">{{ scan.finding_count }} finding{{ 's' if scan.finding_count != 1 else '' }}</span>
+                      </td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('web.view_scan', scan_id=scan.id) }}">Inspect</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-state-box">
+              <div class="empty-state-icon" aria-hidden="true">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <circle cx="11.5" cy="14.5" r="2.5"/>
+                  <path d="M13.5 16.5 17 20"/>
+                </svg>
+              </div>
+              <h3 class="h5 fw-bold mb-1">No completed scans yet.</h3>
+              <p class="text-muted small mb-3">Upload your first PDF or image to inspect for sensitive data leaks.</p>
+              <a href="{{ url_for('web.index') }}" class="btn btn-primary btn-sm">
+                Analyze a Document
+              </a>
+            </div>
+          {% endif %}
+        </div>
       </section>
     </main>
+
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}" defer></script>
   </body>
 </html>

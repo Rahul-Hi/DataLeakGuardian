@@ -61,3 +61,36 @@ def test_rejects_invalid_upload_in_integration_flow():
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Only PDF, PNG, JPG, and JPEG files are allowed" in html
+
+
+def test_contextual_snippets_are_safely_masked_and_remediations_rendered():
+    _, client, _ = create_authenticated_test_client()
+
+    payload = (
+        "Document Record.\n"
+        "Customer Aadhaar: 1234 5678 9012 registered for access.\n"
+        "Contact Email: confidential@corp.test registered for alerts."
+    )
+
+    response = client.post(
+        "/",
+        data={"file": (BytesIO(_make_pdf_bytes(payload)), "snippet_test.pdf")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    # Contextual snippet checks
+    assert "Context Preview" in html
+    assert "XXXX XXXX 9012" in html
+    assert "co" in html and "@corp.test" in html
+
+    # Absolute safe masking assertion: raw PII never leaks into snippet or HTML
+    assert "1234 5678 9012" not in html
+    assert "confidential@corp.test" not in html
+
+    # Actionable remediation guidance rendered
+    assert "Actionable Remediation & Redaction Guidance" in html
+    assert "UIDAI" in html or "Aadhaar" in html
+

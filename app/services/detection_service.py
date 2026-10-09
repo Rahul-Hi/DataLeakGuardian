@@ -39,7 +39,25 @@ def _get_confidence(type_name, evidence):
     }.get(type_name, 0.8), evidence
 
 
-def _add_finding(findings, type_name, value, position, evidence):
+def _build_context_snippet(text, position, match_length, window=35):
+    if not text:
+        return ""
+    start = max(0, position - window)
+    end = min(len(text), position + match_length + window)
+
+    prefix = text[start:position]
+    suffix = text[position + match_length : end]
+
+    prefix_clean = re.sub(r"\s+", " ", prefix)
+    suffix_clean = re.sub(r"\s+", " ", suffix)
+
+    lead_ellipsis = "... " if start > 0 else ""
+    trail_ellipsis = " ..." if end < len(text) else ""
+
+    return f"{lead_ellipsis}{prefix_clean}[MATCH]{suffix_clean}{trail_ellipsis}".strip()
+
+
+def _add_finding(findings, type_name, value, position, evidence, context_snippet=""):
     cleaned_value = value.strip()
     if not cleaned_value:
         return
@@ -51,6 +69,7 @@ def _add_finding(findings, type_name, value, position, evidence):
             "position": position,
             "confidence": confidence,
             "evidence": evidence_text,
+            "context_snippet": context_snippet or "[MATCH]",
         }
     )
 
@@ -76,36 +95,42 @@ def detect_sensitive_data(text):
     email_pattern = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
     for match in email_pattern.finditer(normalized):
         value = match.group(0)
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["email"],
             value,
             match.start(),
             "Email regex matched a valid email address.",
+            snippet,
         )
 
     # PAN
     pan_pattern = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", re.IGNORECASE)
     for match in pan_pattern.finditer(normalized):
         value = match.group(0).upper()
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["pan"],
             value,
             match.start(),
             "PAN pattern matched a valid format.",
+            snippet,
         )
 
     # IFSC
     ifsc_pattern = re.compile(r"\b[A-Z]{4}[0][A-Z0-9]{6}\b")
     for match in ifsc_pattern.finditer(normalized):
         value = match.group(0).upper()
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["ifsc"],
             value,
             match.start(),
             "IFSC pattern matched a valid bank code format.",
+            snippet,
         )
 
     # Phone
@@ -127,12 +152,14 @@ def detect_sensitive_data(text):
         if not has_context and not compact.startswith("+91"):
             continue
 
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["phone"],
             value,
             match.start(),
             "Phone pattern matched a valid Indian contact number format.",
+            snippet,
         )
 
     # Aadhaar
@@ -145,12 +172,14 @@ def detect_sensitive_data(text):
         context = _context_for(normalized, match.start(), len(value)).lower()
         if "aadhaar" not in context and "uid" not in context and "unique identification" not in context:
             continue
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["aadhaar"],
             value,
             match.start(),
             "Aadhaar pattern matched a 12-digit identifier in an Aadhaar context.",
+            snippet,
         )
 
     # Bank account number
@@ -164,12 +193,14 @@ def detect_sensitive_data(text):
         )
         if not has_context:
             continue
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["bank_account"],
             value,
             match.start(),
             "Bank account number matched a numeric identifier in a financial context.",
+            snippet,
         )
 
     # Date of Birth
@@ -184,12 +215,14 @@ def detect_sensitive_data(text):
         if "dob" not in _context_for(normalized, match.start(), len(value)).lower() and "date of birth" not in normalized.lower():
             if re.search(r"\b(?:birth|dob|date of birth)\b", normalized, re.IGNORECASE) is None:
                 continue
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["dob"],
             value,
             match.start(),
             "Date of birth matched a valid date format.",
+            snippet,
         )
 
     # PIN / Postal Code
@@ -202,12 +235,14 @@ def detect_sensitive_data(text):
         context = _context_for(normalized, match.start(), len(value)).lower()
         if "pin" not in context and "postal" not in context and "zip" not in context and "pincode" not in context:
             continue
+        snippet = _build_context_snippet(normalized, match.start(), len(value))
         _add_finding(
             findings,
             SENSITIVE_TYPES["pin"],
             value,
             match.start(),
             "PIN/postal code matched a six-digit location code in a location context.",
+            snippet,
         )
 
     return findings

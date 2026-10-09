@@ -78,3 +78,49 @@ def test_empty_no_findings_report_is_generated():
     pdf_doc.close()
 
     assert "No sensitive findings were detected." in extracted_text
+
+
+def test_report_generation_with_pre_masked_findings_preserves_pin_and_account():
+    risk_result = {
+        "total_score": 45,
+        "risk_level": "Moderate",
+        "detected_category_summary": {"pin": 1, "bank_account": 1},
+        "score_contribution_of_each_category": {"pin": 20, "bank_account": 25, "email": 0, "aadhaar": 0, "pan": 0, "ifsc": 0, "phone": 0, "dob": 0},
+        "explanations": ["PIN detected 1 time(s); contributed 20 points.", "Bank account detected 1 time(s); contributed 25 points."],
+    }
+    # These findings simulate already-masked items coming from web routes
+    findings = [
+        {"type": "pin", "value": "XXXXXX", "confidence": 0.9, "evidence": "PIN matched"},
+        {"type": "bank_account", "value": "XXXXXXXX9012", "confidence": 0.88, "evidence": "Bank account matched"},
+    ]
+
+    report_name = generate_privacy_report("premasked.pdf", "PDF", risk_result, findings)
+    report_path = os.path.join(create_app().config["REPORT_FOLDER"], report_name)
+    pdf_doc = fitz.open(report_path)
+    extracted_text = "\n".join(page.get_text("text") for page in pdf_doc)
+    pdf_doc.close()
+
+    assert "XXXXXX" in extracted_text
+    assert "XXXXXXXX9012" in extracted_text
+
+
+def test_mask_sensitive_value_idempotency_all_categories():
+    from app.utils.masking import mask_sensitive_value
+
+    cases = [
+        ("pin", "560001", "XXXXXX"),
+        ("bank_account", "123456789012", "XXXXXXXX9012"),
+        ("phone", "+91 98765 43210", "XXXXXXXX3210"),
+        ("aadhaar", "1234 5678 9012", "XXXX XXXX 9012"),
+        ("pan", "ABCDE1234F", "XXXXX1234F"),
+        ("ifsc", "SBIN0123456", "XXXX123456"),
+        ("email", "alice@example.com", "al***@example.com"),
+        ("dob", "15/08/1990", "XX/XX/1990"),
+    ]
+    for category, raw, expected_masked in cases:
+        first_pass = mask_sensitive_value(category, raw)
+        assert first_pass == expected_masked
+        second_pass = mask_sensitive_value(category, first_pass)
+        assert second_pass == first_pass
+
+

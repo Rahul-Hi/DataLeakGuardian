@@ -1,17 +1,65 @@
-<header class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-  <a class="brand-mark fs-5" href="{{ url_for('web.index') }}">Data Leak Guardian</a>
-  <nav class="app-nav d-flex align-items-center gap-3 gap-md-4 flex-wrap" aria-label="Main navigation">
-    {% if current_user %}
-      <a href="{{ url_for('web.dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('web.history') }}">Scan history</a>
-      <span class="text-muted small">{{ current_user.name }}</span>
-      <form method="post" action="{{ url_for('web.logout') }}" class="m-0">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-sm btn-outline-secondary" type="submit">Log out</button>
-      </form>
-    {% else %}
-      <a href="{{ url_for('web.login') }}">Log in</a>
-      <a href="{{ url_for('web.register') }}">Register</a>
-    {% endif %}
-  </nav>
+<header class="app-header mb-4 py-2 px-3 px-md-4">
+  <div class="container-fluid d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-3">
+      <a class="brand-wrapper" href="{{ url_for('web.dashboard') if current_user else url_for('web.login') }}">
+        <div class="brand-icon-shield" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div>
+          <span class="brand-mark">Data Leak Guardian</span>
+          <span class="brand-tag ms-2 d-none d-sm-inline-block">Security Console</span>
+        </div>
+      </a>
+    </div>
+
+    <nav class="app-nav" aria-label="Main navigation">
+      {% if current_user %}
+        <a class="nav-link-custom {{ 'active' if request.endpoint == 'web.dashboard' else '' }}" href="{{ url_for('web.dashboard') }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="7" height="9" x="3" y="3" rx="1"/>
+            <rect width="7" height="5" x="14" y="3" rx="1"/>
+            <rect width="7" height="9" x="14" y="12" rx="1"/>
+            <rect width="7" height="5" x="3" y="16" rx="1"/>
+          </svg>
+          Dashboard
+        </a>
+        <a class="nav-link-custom {{ 'active' if request.endpoint == 'web.history' else '' }}" href="{{ url_for('web.history') }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          Scan history
+        </a>
+        <a class="btn-header-cta {{ 'active' if request.endpoint == 'web.index' else '' }}" href="{{ url_for('web.index') }}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" x2="12" y1="3" y2="15"/>
+          </svg>
+          <span>New Scan</span>
+        </a>
+        <a href="{{ url_for('web.profile') }}" class="user-badge-pill ms-md-2 text-decoration-none" title="User Profile & Settings">
+          <span class="user-avatar-initials">{{ current_user.name[:1]|upper }}</span>
+          <span class="d-none d-md-inline">{{ current_user.name }}</span>
+        </a>
+        <form method="post" action="{{ url_for('web.logout') }}" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-secondary text-light border-secondary" type="submit" title="Log out">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" x2="9" y1="12" y2="12"/>
+            </svg>
+            <span class="d-none d-sm-inline ms-1">Log out</span>
+          </button>
+        </form>
+      {% else %}
+        <a class="nav-link-custom {{ 'active' if request.endpoint == 'web.login' else '' }}" href="{{ url_for('web.login') }}">Log in</a>
+        <a class="btn-header-cta" href="{{ url_for('web.register') }}">Register</a>
+      {% endif %}
+    </nav>
+  </div>
 </header>
