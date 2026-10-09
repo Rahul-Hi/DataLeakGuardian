@@ -2,5 +2,8 @@ __pycache__/
 *.pyc
 .venv/
 *.db
+instance/
+test_data_real/
+app/static/reports/*
 app/static/uploads/*
 !app/static/uploads/.gitkeep
