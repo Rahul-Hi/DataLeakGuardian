@@ -1,5 +1,7 @@
+import io
 import os
 import re
+import shutil
 from pathlib import Path
 
 import fitz
@@ -9,6 +11,21 @@ from PIL import Image, ImageFilter, ImageOps
 TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 if os.path.exists(TESSERACT_PATH):
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
+
+
+def is_tesseract_available() -> bool:
+    """Check whether the Tesseract OCR binary is installed and accessible."""
+    cmd = getattr(pytesseract.pytesseract, "tesseract_cmd", "tesseract")
+    if cmd and cmd != "tesseract":
+        if os.path.isfile(cmd):
+            return True
+        if shutil.which(cmd):
+            return True
+    if shutil.which("tesseract"):
+        return True
+    if os.path.isfile(TESSERACT_PATH):
+        return True
+    return False
 
 
 def normalize_extracted_text(text):
@@ -30,8 +47,13 @@ def _prepare_image(image):
     return image
 
 
-def _ocr_image(image_path):
-    with Image.open(image_path) as image:
+def _ocr_image(image_input):
+    if isinstance(image_input, (bytes, bytearray)):
+        img_ctx = Image.open(io.BytesIO(image_input))
+    else:
+        img_ctx = Image.open(image_input)
+
+    with img_ctx as image:
         processed = _prepare_image(image.convert("RGB"))
         text = pytesseract.image_to_string(processed, config="--psm 6")
     return normalize_extracted_text(text)
@@ -45,9 +67,12 @@ def _ocr_pdf_page(page):
     return normalize_extracted_text(text)
 
 
-def _extract_pdf_text(file_path):
+def _extract_pdf_text(source):
     try:
-        document = fitz.open(file_path)
+        if isinstance(source, (bytes, bytearray)):
+            document = fitz.open(stream=source, filetype="pdf")
+        else:
+            document = fitz.open(source)
     except Exception as exc:
         raise ValueError("Document is unreadable or corrupted.") from exc
 
@@ -61,6 +86,12 @@ def _extract_pdf_text(file_path):
         combined_text = "\n\n".join(pages).strip()
 
         if len(combined_text) < 20:
+            if not is_tesseract_available():
+                raise ValueError(
+                    "OCR engine (Tesseract) is not installed on this server. "
+                    "Scanned PDFs and image-only documents cannot be processed. "
+                    "Please upload a digital text PDF or paste text directly."
+                )
             ocr_pages = []
             for page in document:
                 ocr_text = _ocr_pdf_page(page)
@@ -77,9 +108,15 @@ def _extract_pdf_text(file_path):
         document.close()
 
 
-def _extract_image_text(file_path):
+def _extract_image_text(source):
+    if not is_tesseract_available():
+        raise ValueError(
+            "OCR engine (Tesseract) is not installed on this server. "
+            "Images cannot be processed without OCR. "
+            "Please upload a digital text PDF or paste text directly."
+        )
     try:
-        text = _ocr_image(file_path)
+        text = _ocr_image(source)
     except Exception as exc:
         raise ValueError("Document is empty or unreadable.") from exc
 
@@ -89,8 +126,18 @@ def _extract_image_text(file_path):
     return text
 
 
-def extract_text_from_file(file_path, file_type=None):
-    path = Path(file_path)
+def extract_text_from_file(file_source, file_type=None):
+    if isinstance(file_source, (bytes, bytearray)):
+        if len(file_source) == 0:
+            raise ValueError("Document is empty or unreadable.")
+        detected_type = (file_type or "").lower().lstrip(".")
+        if detected_type not in {"pdf", "png", "jpg", "jpeg"}:
+            raise ValueError("Unsupported file type.")
+        if detected_type == "pdf":
+            return _extract_pdf_text(file_source)
+        return _extract_image_text(file_source)
+
+    path = Path(file_source)
     if not path.exists() or path.stat().st_size == 0:
         raise ValueError("Document is empty or unreadable.")
 

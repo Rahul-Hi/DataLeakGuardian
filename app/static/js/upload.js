@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const analyzeSpinner = document.getElementById("analyze-spinner");
   const uploadProgress = document.getElementById("upload-progress");
 
-  const MAX_BYTES = 5 * 1024 * 1024;
+  const MAX_BYTES = 4 * 1024 * 1024;
   const ALLOWED_EXTS = [".pdf", ".png", ".jpg", ".jpeg"];
 
   function formatBytes(bytes) {
@@ -48,7 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (file.size > MAX_BYTES) {
-      showAlert("File size exceeds the 5 MB limit. Please select a smaller document.");
+      showAlert("File size exceeds the 4 MB limit. Please select a smaller document.");
       fileInput.value = "";
       if (previewCard) previewCard.classList.add("d-none");
       return;
@@ -124,7 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (file.size > MAX_BYTES) {
           event.preventDefault();
-          showAlert("File size exceeds the 5 MB limit.");
+          showAlert("File size exceeds the 4 MB limit.");
           return;
         }
       }

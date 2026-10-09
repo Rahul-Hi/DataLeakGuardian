@@ -1,0 +1,38 @@
+# Local virtual environment
+.venv/
+venv/
+env/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Tests and testing artifacts
+tests/
+
+# Local database and instance data
+database/app.db
+instance/
+uploads/
+reports/
+
+# Environment files and credentials
+.env
+.env.*
+*.key
+*.pem
+
+# Git and tooling
+.git/
+.github/
+.gitignore
+
+# Scratch and editor files
+scratch/
+.vscode/
+.idea/
+*.log

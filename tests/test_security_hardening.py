@@ -27,13 +27,13 @@ def test_oversized_upload_is_rejected():
 
     response = client.post(
         "/",
-        data={"file": (BytesIO(b"x" * (5 * 1024 * 1024 + 1)), "large.pdf")},
+        data={"file": (BytesIO(b"x" * (4 * 1024 * 1024 + 1)), "large.pdf")},
         content_type="multipart/form-data",
     )
 
     html = response.get_data(as_text=True)
     assert response.status_code == 413
-    assert "File size exceeds the 5 MB limit." in html
+    assert "File size exceeds the 4 MB limit." in html
 
 
 def test_unsupported_extension_is_rejected():
@@ -252,3 +252,33 @@ def test_secure_cookies_and_security_headers_are_enabled():
     assert response.headers["Content-Security-Policy"] == (
         "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
     )
+
+
+def test_database_path_environment_override_is_honored(monkeypatch, tmp_path):
+    custom_db = tmp_path / "custom_test.db"
+    monkeypatch.setenv("DATABASE_PATH", str(custom_db))
+
+    app = create_app({"TESTING": True, "WTF_CSRF_ENABLED": False})
+    with app.app_context():
+        assert Path(app.config.get("DATABASE_PATH", custom_db)).resolve() == custom_db.resolve()
+        db = get_db()
+        db.execute("INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
+                   ("Custom DB User", "custom_db@example.test", "custom_hash"))
+        db.commit()
+        user = db.execute("SELECT name FROM users WHERE email = ?", ("custom_db@example.test",)).fetchone()
+        assert user["name"] == "Custom DB User"
+
+    assert custom_db.exists()
+
+
+def test_storage_folders_environment_overrides_are_honored(monkeypatch, tmp_path):
+    custom_uploads = tmp_path / "custom_uploads"
+    custom_reports = tmp_path / "custom_reports"
+    monkeypatch.setenv("UPLOAD_FOLDER", str(custom_uploads))
+    monkeypatch.setenv("REPORT_FOLDER", str(custom_reports))
+
+    app = create_app({"TESTING": True})
+    assert Path(app.config["UPLOAD_FOLDER"]).resolve() == custom_uploads.resolve()
+    assert Path(app.config["REPORT_FOLDER"]).resolve() == custom_reports.resolve()
+    assert custom_uploads.is_dir()
+    assert custom_reports.is_dir()

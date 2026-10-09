@@ -19,6 +19,7 @@ The application calculates an explainable, deterministic privacy-risk score, ren
 - [Running the Application](#running-the-application)
 - [Testing Suite](#testing-suite)
 - [Usage Guide](#usage-guide)
+- [Cloud Deployment Prerequisites (Vercel)](#cloud-deployment-prerequisites-vercel)
 - [Security & Privacy Posture](#security--privacy-posture)
 - [Known Limitations](#known-limitations)
 - [Future Improvements](#future-improvements)
@@ -399,6 +400,44 @@ Expected output:
    - Filter records by filename search query, risk severity tier, or sort order.
 7. **Manage Profile & Security**:
    - Click on your user avatar pill in the top navigation to view account information or update your account password.
+
+---
+
+## Cloud Deployment Prerequisites (Vercel)
+
+Data Leak Guardian supports serverless deployment on Vercel backed by an external PostgreSQL database and Cloudflare R2 object storage. Before routing production traffic, ensure the following prerequisites and configurations are met:
+
+### 1. PostgreSQL Database & Manual Schema Migration
+- A managed PostgreSQL instance (such as Neon, Supabase, or AWS RDS) is required. Serverless production environments do not use local SQLite.
+- **Manual Schema Migration**: In production environments, automatic schema initialization is bypassed on cold starts to avoid latency. You **must** apply [`database/schema_postgres.sql`](database/schema_postgres.sql) manually to your target PostgreSQL database prior to enabling production traffic:
+  ```bash
+  psql "$DATABASE_URL" -f database/schema_postgres.sql
+  ```
+
+### 2. Cloudflare R2 Object Storage
+- Vercel functions execute in an ephemeral, read-only filesystem (except temporary `/tmp`). Persistent document uploads and generated audit reports require Cloudflare R2 object storage.
+- Set `STORAGE_BACKEND=r2` along with the corresponding bucket credentials listed below.
+
+### 3. Required Vercel Environment Variables
+Configure the following environment variables in your Vercel Project Settings:
+
+| Variable | Description | Value Format |
+| :--- | :--- | :--- |
+| `FLASK_SECRET_KEY` | High-entropy secret key for session signing and CSRF tokens | 64-character hex string |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/db?sslmode=require` |
+| `STORAGE_BACKEND` | Storage provider selection | `r2` |
+| `R2_BUCKET_NAME` | Cloudflare R2 bucket name | Target bucket name |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID | 32-character hex ID |
+| `R2_ACCESS_KEY_ID` | R2 API Token Access Key ID | S3-compatible Access Key ID |
+| `R2_SECRET_ACCESS_KEY` | R2 API Token Secret Access Key | S3-compatible Secret Access Key |
+| `R2_ENDPOINT_URL` | Optional explicit endpoint URL | `https://<account_id>.r2.cloudflarestorage.com` |
+
+> [!NOTE]
+> In production environments (`VERCEL=1`, `VERCEL_ENV=production`, or `FLASK_ENV=production`), the application enforces strict startup guards and will fail fast with an actionable configuration error if `FLASK_SECRET_KEY`, `DATABASE_URL`, or required R2 credentials are missing or invalid.
+
+### 4. Runtime Limitations & Pending Integration Testing
+- **Tesseract OCR Availability**: The standard Vercel serverless Python runtime does not include system binaries such as Tesseract OCR. While digital PDF text extraction functions natively via PyMuPDF without Tesseract, scanned PDFs and image files will gracefully return an actionable error message explaining that OCR engine dependencies are not installed on the serverless host.
+- **Live Integration Testing**: The dual-database adapter and Cloudflare R2 storage layer have been verified with thorough unit and isolated mock test suites. Live end-to-end integration testing against active PostgreSQL and Cloudflare R2 instances must be performed in a staging environment prior to final production release.
 
 ---
 

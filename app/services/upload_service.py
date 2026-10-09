@@ -7,8 +7,15 @@ from flask import current_app
 from werkzeug.utils import secure_filename
 
 from app.database import get_db
+from app.services.storage_service import LocalStorageBackend, get_storage
 
-MAX_FILE_SIZE = 5 * 1024 * 1024
+MAX_FILE_SIZE = 4 * 1024 * 1024
+
+
+def get_max_file_size():
+    if current_app:
+        return current_app.config.get("MAX_CONTENT_LENGTH", MAX_FILE_SIZE)
+    return int(os.environ.get("MAX_CONTENT_LENGTH", MAX_FILE_SIZE))
 
 
 def _file_has_valid_signature(file_name, file_bytes):
@@ -31,6 +38,11 @@ def is_allowed_file(filename):
 
 def cleanup_stale_files(max_age_hours=24):
     if not current_app:
+        return
+
+    storage = get_storage()
+    if not isinstance(storage, LocalStorageBackend):
+        # Cloud object storage lifecycle policies handle remote bucket expiration
         return
 
     referenced = get_db().execute(
@@ -71,31 +83,33 @@ def save_uploaded_file(file_storage):
     file_size = file_storage.tell()
     file_storage.seek(0)
 
+    max_size = get_max_file_size()
+    max_mb = max_size // (1024 * 1024)
+
     if file_size <= 0:
         raise ValueError("Uploaded file is empty.")
-    if file_size > MAX_FILE_SIZE:
-        raise ValueError("File size exceeds the 5 MB limit.")
+    if file_size > max_size:
+        raise ValueError(f"File size exceeds the {max_mb} MB limit.")
 
-    file_bytes = file_storage.read(4096)
+    signature_bytes = file_storage.read(4096)
     file_storage.seek(0)
-    if not _file_has_valid_signature(original_name, file_bytes):
+    if not _file_has_valid_signature(original_name, signature_bytes):
         raise ValueError("The uploaded file is corrupted or invalid.")
+
+    file_bytes = file_storage.read()
+    file_storage.seek(0)
 
     file_ext = Path(original_name).suffix.lower()
     safe_name = f"{uuid.uuid4().hex}{file_ext}"
-    upload_dir = Path(os.path.abspath(current_app.config["UPLOAD_FOLDER"]))
-    target_path = upload_dir / safe_name
-    target_path = target_path.resolve()
 
-    if os.path.commonpath([str(upload_dir.resolve()), str(target_path)]) != str(upload_dir.resolve()):
-        raise ValueError("Unsafe upload path detected.")
-
-    file_storage.save(target_path)
+    storage = get_storage()
+    stored_path = storage.save("uploads", safe_name, file_bytes)
 
     return {
         "original_name": original_name,
         "file_name": safe_name,
         "file_type": file_ext.lstrip("."),
         "file_size": file_size,
-        "stored_path": f"uploads/{safe_name}",
+        "stored_path": stored_path,
+        "file_bytes": file_bytes,
     }

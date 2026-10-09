@@ -1,3 +1,4 @@
+import os
 import re
 import uuid
 from io import BytesIO
@@ -30,7 +31,10 @@ def _csrf_token(client, path):
 
 
 def _new_app_client():
-    app = create_app({"TESTING": True, "WTF_CSRF_ENABLED": True})
+    config = {"TESTING": True, "WTF_CSRF_ENABLED": True}
+    if os.environ.get("DATABASE_PATH"):
+        config["DATABASE_PATH"] = os.environ["DATABASE_PATH"]
+    app = create_app(config)
     return app, app.test_client()
 
 

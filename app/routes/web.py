@@ -4,7 +4,6 @@ import math
 import os
 import json
 import re
-import sqlite3
 import uuid
 from functools import wraps
 from pathlib import Path
@@ -24,11 +23,12 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app.database import get_db
+from app.database import IntegrityError, get_db
 from app.services.detection_service import detect_sensitive_data
 from app.services.extraction_service import extract_text_from_file
 from app.services.report_service import generate_privacy_report
 from app.services.risk_service import calculate_privacy_risk
+from app.services.storage_service import get_storage
 from app.services.upload_service import cleanup_stale_files, save_uploaded_file
 from app.utils.masking import mask_sensitive_value
 
@@ -68,7 +68,7 @@ def register():
                     (name, email, generate_password_hash(password)),
                 )
                 db.commit()
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 db.rollback()
                 flash("An account with that email already exists.", "danger")
             else:
@@ -236,29 +236,43 @@ def _process_findings_and_save(original_name, file_name, file_type, file_size, s
     )
 
     db = get_db()
-    cursor = db.execute(
-        """
-        INSERT INTO documents (
-            user_id, original_name, file_name, file_type, file_size, stored_path, status,
-            total_score, risk_level, finding_count, findings_json, risk_json, report_name
-        ) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            session["user_id"],
-            original_name,
-            file_name,
-            file_type,
-            file_size,
-            stored_path,
-            risk_result["total_score"],
-            risk_result["risk_level"],
-            len(masked_findings),
-            json.dumps(masked_findings),
-            json.dumps(risk_result),
-            report_name,
-        ),
-    )
-    db.commit()
+    try:
+        cursor = db.execute(
+            """
+            INSERT INTO documents (
+                user_id, original_name, file_name, file_type, file_size, stored_path, status,
+                total_score, risk_level, finding_count, findings_json, risk_json, report_name
+            ) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session["user_id"],
+                original_name,
+                file_name,
+                file_type,
+                file_size,
+                stored_path,
+                risk_result["total_score"],
+                risk_result["risk_level"],
+                len(masked_findings),
+                json.dumps(masked_findings),
+                json.dumps(risk_result),
+                report_name,
+            ),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage = get_storage()
+        try:
+            storage.delete("reports", report_name)
+        except Exception:
+            pass
+        try:
+            storage.delete("uploads", file_name)
+        except Exception:
+            pass
+        raise
+
     scan = _get_scan(cursor.lastrowid)
     return scan, report_name
 
@@ -273,10 +287,12 @@ def index():
             flash("Please choose a file to upload.", "danger")
             return render_template("upload.html")
 
+        file_info = None
         try:
             file_info = save_uploaded_file(uploaded_file)
-            stored_path = os.path.abspath(os.path.join(current_app.config["UPLOAD_FOLDER"], file_info["file_name"]))
-            extracted_text = extract_text_from_file(stored_path, file_info["file_type"])
+            extracted_text = extract_text_from_file(
+                file_info.get("file_bytes") or file_info["stored_path"], file_info["file_type"]
+            )
             scan, report_name = _process_findings_and_save(
                 original_name=file_info["original_name"],
                 file_name=file_info["file_name"],
@@ -286,9 +302,19 @@ def index():
                 text_content=extracted_text,
             )
         except ValueError as exc:
+            if file_info and file_info.get("file_name"):
+                try:
+                    get_storage().delete("uploads", file_info["file_name"])
+                except Exception:
+                    pass
             flash(str(exc), "danger")
             return render_template("upload.html")
         except Exception:
+            if file_info and file_info.get("file_name"):
+                try:
+                    get_storage().delete("uploads", file_info["file_name"])
+                except Exception:
+                    pass
             flash("Unable to process this file. Please upload a valid PDF or image.", "danger")
             return render_template("upload.html")
 
@@ -308,8 +334,10 @@ def scan_text():
 
     raw_text = text_content.strip()
     byte_size = len(raw_text.encode("utf-8"))
-    if byte_size > 5 * 1024 * 1024:
-        flash("Text content exceeds the 5 MB limit.", "danger")
+    max_bytes = current_app.config.get("MAX_CONTENT_LENGTH", 4 * 1024 * 1024)
+    max_mb = max_bytes // (1024 * 1024)
+    if byte_size > max_bytes:
+        flash(f"Text content exceeds the {max_mb} MB limit.", "danger")
         return redirect(url_for("web.index", mode="text"))
 
     snippet_name = request.form.get("snippet_name", "").strip()
@@ -320,14 +348,8 @@ def scan_text():
 
     token = uuid.uuid4().hex
     safe_filename = f"text_{token}.txt"
-    stored_path = f"uploads/{safe_filename}"
-    abs_stored_path = os.path.join(current_app.config["UPLOAD_FOLDER"], safe_filename)
-    try:
-        with open(abs_stored_path, "w", encoding="utf-8") as f:
-            f.write(raw_text)
-    except OSError:
-        flash("Unable to save snippet for processing.", "danger")
-        return redirect(url_for("web.index", mode="text"))
+    storage = get_storage()
+    stored_path = storage.save("uploads", safe_filename, raw_text.encode("utf-8"))
 
     try:
         scan, report_name = _process_findings_and_save(
@@ -470,10 +492,20 @@ def view_scan(scan_id):
 @login_required
 def download_report(scan_id):
     scan = _get_scan(scan_id)
-    report_path = _scan_path("REPORT_FOLDER", scan["report_name"])
-    if report_path is None or not report_path.is_file() or report_path.suffix.lower() != ".pdf":
+    report_name = scan["report_name"]
+    if not report_name or not report_name.lower().endswith(".pdf"):
         return "Not Found", 404
-    return send_from_directory(current_app.config["REPORT_FOLDER"], report_path.name, as_attachment=True)
+
+    storage = get_storage()
+    if not storage.exists("reports", report_name):
+        return "Not Found", 404
+
+    stream = storage.get_stream("reports", report_name)
+    return Response(
+        stream,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{report_name}"'},
+    )
 
 
 @web_bp.route("/history/<int:scan_id>/export/json")
@@ -482,11 +514,19 @@ def export_scan_json(scan_id):
     scan = _get_scan(scan_id)
     context = _result_context(scan)
 
+    raw_timestamp = scan["uploaded_at"]
+    if hasattr(raw_timestamp, "isoformat"):
+        scan_timestamp = raw_timestamp.isoformat()
+    elif raw_timestamp is not None:
+        scan_timestamp = str(raw_timestamp)
+    else:
+        scan_timestamp = None
+
     export_payload = {
         "scan_id": scan["id"],
         "filename": scan["original_name"],
         "file_type": scan["file_type"].upper(),
-        "scan_timestamp": scan["uploaded_at"],
+        "scan_timestamp": scan_timestamp,
         "total_risk_score": scan["total_score"],
         "risk_level": scan["risk_level"],
         "finding_count": scan["finding_count"],
@@ -571,23 +611,37 @@ def export_scan_csv(scan_id):
 @login_required
 def delete_scan(scan_id):
     scan = _get_scan(scan_id)
-    upload_path = _scan_path("UPLOAD_FOLDER", scan["file_name"])
-    report_path = _scan_path("REPORT_FOLDER", scan["report_name"])
+    storage = get_storage()
+
+    db = get_db()
+    db.execute("DELETE FROM documents WHERE id = ?", (scan_id,))
+    db.commit()
+
+    if scan["file_name"]:
+        try:
+            storage.delete("uploads", scan["file_name"])
+        except Exception:
+            current_app.logger.warning("Could not remove upload artifact: %s", scan["file_name"])
+
+    if scan["report_name"]:
+        try:
+            storage.delete("reports", scan["report_name"])
+        except Exception:
+            current_app.logger.warning("Could not remove report artifact: %s", scan["report_name"])
+
     legacy_upload_path = _path_in_directory(
         os.path.join(current_app.root_path, "static", "uploads"), scan["file_name"]
     )
     legacy_report_path = _path_in_directory(
         os.path.join(current_app.root_path, "static", "reports"), scan["report_name"]
     )
-    db = get_db()
-    db.execute("DELETE FROM documents WHERE id = ?", (scan_id,))
-    db.commit()
-    for path in (upload_path, report_path, legacy_upload_path, legacy_report_path):
+    for path in (legacy_upload_path, legacy_report_path):
         if path is not None:
             try:
                 path.unlink(missing_ok=True)
             except OSError:
-                current_app.logger.warning("Could not remove scan artifact: %s", path.name)
+                current_app.logger.warning("Could not remove legacy artifact: %s", path.name)
+
     flash("Scan and associated files deleted.", "success")
     return redirect(url_for("web.history"))
 

@@ -1,14 +1,14 @@
-import os
+import io
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from flask import current_app, has_app_context
 
+from app.services.storage_service import get_storage
 from app.utils.masking import mask_sensitive_value
 
 
@@ -16,20 +16,20 @@ def generate_privacy_report(document_name, file_type, risk_result, findings=None
     findings = findings or []
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    if has_app_context():
-        output_dir = current_app.config["REPORT_FOLDER"]
-    else:
-        project_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        output_dir = os.path.join(project_dir, "instance", "reports")
-    os.makedirs(output_dir, exist_ok=True)
-
     report_name = f"privacy_report_{uuid.uuid4().hex}.pdf"
-    report_path = os.path.join(output_dir, report_name)
+    pdf_buffer = io.BytesIO()
 
-    doc = SimpleDocTemplate(report_path, pagesize=letter)
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=18, leading=22, spaceAfter=20)
-    heading_style = ParagraphStyle("ReportHeading", fontName="Helvetica-Bold", fontSize=11, leading=14, spaceAfter=8, textColor=colors.HexColor("#1f2937"))
+    heading_style = ParagraphStyle(
+        "ReportHeading",
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=14,
+        spaceAfter=8,
+        textColor=colors.HexColor("#1f2937"),
+    )
     body_style = ParagraphStyle("ReportBody", parent=styles["BodyText"], fontSize=9, leading=12)
 
     content = []
@@ -97,4 +97,9 @@ def generate_privacy_report(document_name, file_type, risk_result, findings=None
             content.append(Paragraph(f"• {action}", body_style))
 
     doc.build(content)
+    pdf_bytes = pdf_buffer.getvalue()
+
+    storage = get_storage()
+    storage.save("reports", report_name, pdf_bytes)
+
     return report_name
