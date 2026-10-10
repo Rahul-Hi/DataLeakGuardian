@@ -321,3 +321,93 @@ def test_gemini_extracted_text_flows_into_pii_detection_and_masking(monkeypatch,
 
     masked_pan = mask_sensitive_value(pan_finding["type"], pan_finding["value"])
     assert masked_pan == "XXXXX1234F"
+
+
+def test_gemini_ocr_uses_default_model_when_unset(monkeypatch):
+    """Verify that gemini-3.5-flash-lite is targeted when GEMINI_MODEL is not set."""
+    from app.services.extraction_service import _call_gemini_vision_ocr
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+    captured_url = []
+
+    def mock_urlopen(req, timeout):
+        captured_url.append(req.full_url)
+        return _mock_http_response("Extracted text")
+
+    def _mock_http_response(text):
+        import json
+        class MockResp:
+            def read(self):
+                return json.dumps({
+                    "candidates": [{"content": {"parts": [{"text": text}]}}]
+                }).encode("utf-8")
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+        return MockResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
+    res = _call_gemini_vision_ocr(b"dummy_bytes", "image/png")
+    assert res == "Extracted text"
+    assert "models/gemini-3.5-flash-lite:generateContent" in captured_url[0]
+
+
+def test_gemini_ocr_respects_explicit_model_env(monkeypatch):
+    """Verify that explicitly configured GEMINI_MODEL is respected."""
+    from app.services.extraction_service import _call_gemini_vision_ocr
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
+
+    captured_url = []
+
+    def mock_urlopen(req, timeout):
+        captured_url.append(req.full_url)
+        class MockResp:
+            def read(self):
+                import json
+                return json.dumps({
+                    "candidates": [{"content": {"parts": [{"text": "text"}]}}]
+                }).encode("utf-8")
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+        return MockResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
+    _call_gemini_vision_ocr(b"dummy_bytes", "image/png")
+    assert "models/gemini-3.8-flash:generateContent" in captured_url[0]
+
+
+def test_gemini_model_not_found_404_handling(monkeypatch):
+    """Verify upstream HTTP 404 raises actionable model-not-found error without leaking secrets."""
+    import urllib.error
+    from app.services.extraction_service import _call_gemini_vision_ocr
+
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-key-12345")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-custom-model")
+
+    def mock_404(*args, **kwargs):
+        raise urllib.error.HTTPError(
+            url="https://generativelanguage.googleapis.com/v1beta/models/gemini-custom-model:generateContent",
+            code=404,
+            msg="Not Found",
+            hdrs={},
+            fp=None,
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_404)
+
+    with pytest.raises(ValueError) as excinfo:
+        _call_gemini_vision_ocr(b"dummy_bytes", "image/png")
+
+    err_msg = str(excinfo.value)
+    assert "OCR service model 'gemini-custom-model' was not found or is unavailable" in err_msg
+    assert "HTTP 404" in err_msg
+    assert "secret-key-12345" not in err_msg

@@ -91,7 +91,7 @@ def _call_gemini_vision_ocr(image_bytes: bytes, mime_type: str = "image/png") ->
             "Please upload a digital text PDF or paste text directly."
         )
 
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite").strip() or "gemini-3.5-flash-lite"
     timeout_sec = float(os.environ.get("GEMINI_TIMEOUT_SECONDS", "8.0"))
 
     # Convert image bytes to Base64 inline data
@@ -147,6 +147,11 @@ def _call_gemini_vision_ocr(image_bytes: bytes, mime_type: str = "image/png") ->
             raise ValueError("OCR service rate limit reached. Please wait a moment and try again.") from err
         if err.code in (400, 401, 403):
             raise ValueError("OCR service authentication failed or invalid configuration.") from err
+        if err.code == 404:
+            raise ValueError(
+                f"OCR service model '{model}' was not found or is unavailable for this API key (HTTP 404). "
+                "Please verify the GEMINI_MODEL setting."
+            ) from err
         raise ValueError(f"OCR service request failed (HTTP {err.code}). Please try again.") from err
     except (urllib.error.URLError, socket.timeout, TimeoutError) as err:
         raise ValueError("OCR service request timed out or network unavailable. Please try again.") from err
