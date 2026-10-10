@@ -492,17 +492,40 @@ def view_scan(scan_id):
 @login_required
 def download_report(scan_id):
     scan = _get_scan(scan_id)
-    report_name = scan["report_name"]
-    if not report_name or not report_name.lower().endswith(".pdf"):
+    report_name = scan["report_name"] or f"privacy_report_{scan['id']}.pdf"
+    if not report_name.lower().endswith(".pdf"):
         return "Not Found", 404
 
     storage = get_storage()
-    if not storage.exists("reports", report_name):
-        return "Not Found", 404
+    if storage.exists("reports", report_name):
+        stream = storage.get_stream("reports", report_name)
+        return Response(
+            stream,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{report_name}"'},
+        )
 
-    stream = storage.get_stream("reports", report_name)
+    # In ephemeral zero-storage mode (or if persistent report file is absent),
+    # generate the PDF on-demand directly from the authorized scan's database records.
+    from app.services.report_service import build_pdf_report_bytes
+
+    risk_result = json.loads(scan["risk_json"] or "{}")
+    findings = json.loads(scan["findings_json"] or "[]")
+    raw_timestamp = scan["uploaded_at"]
+    if hasattr(raw_timestamp, "strftime"):
+        timestamp_str = raw_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        timestamp_str = str(raw_timestamp) if raw_timestamp else None
+
+    pdf_bytes = build_pdf_report_bytes(
+        document_name=scan["original_name"],
+        file_type=scan["file_type"].upper(),
+        risk_result=risk_result,
+        findings=findings,
+        scan_timestamp=timestamp_str,
+    )
     return Response(
-        stream,
+        io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{report_name}"'},
     )

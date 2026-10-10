@@ -12,13 +12,12 @@ from app.services.storage_service import get_storage
 from app.utils.masking import mask_sensitive_value
 
 
-def generate_privacy_report(document_name, file_type, risk_result, findings=None):
+def build_pdf_report_bytes(document_name, file_type, risk_result, findings=None, scan_timestamp=None) -> bytes:
+    """Builds a formatted PDF privacy report in-memory and returns the raw PDF bytes."""
     findings = findings or []
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = scan_timestamp or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    report_name = f"privacy_report_{uuid.uuid4().hex}.pdf"
     pdf_buffer = io.BytesIO()
-
     doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=18, leading=22, spaceAfter=20)
@@ -97,9 +96,19 @@ def generate_privacy_report(document_name, file_type, risk_result, findings=None
             content.append(Paragraph(f"• {action}", body_style))
 
     doc.build(content)
-    pdf_bytes = pdf_buffer.getvalue()
+    return pdf_buffer.getvalue()
 
+
+def generate_privacy_report(document_name, file_type, risk_result, findings=None):
+    report_name = f"privacy_report_{uuid.uuid4().hex}.pdf"
     storage = get_storage()
-    storage.save("reports", report_name, pdf_bytes)
+    from app.services.storage_service import EphemeralStorageBackend
 
+    if isinstance(storage, EphemeralStorageBackend):
+        # In ephemeral mode, PDF is generated on-demand at download time from DB findings.
+        # Report name is preserved as metadata/filename for HTTP downloads.
+        return report_name
+
+    pdf_bytes = build_pdf_report_bytes(document_name, file_type, risk_result, findings)
+    storage.save("reports", report_name, pdf_bytes)
     return report_name

@@ -237,3 +237,30 @@ def test_database_failure_cleans_up_storage_artifacts(tmp_path, monkeypatch):
 
         # Confirm that uploaded file was cleaned up on failure
         assert not storage.exists("uploads", "fail_test.pdf")
+
+
+def test_ephemeral_storage_backend():
+    from app.services.storage_service import EphemeralStorageBackend
+
+    storage = EphemeralStorageBackend()
+    key = storage.save("uploads", "doc.pdf", b"sample content")
+    assert key == "uploads/ephemeral_doc.pdf"
+    assert not storage.exists("uploads", "doc.pdf")
+    assert storage.delete("uploads", "doc.pdf") is True
+
+    with pytest.raises(FileNotFoundError):
+        storage.get_bytes("uploads", "doc.pdf")
+
+    with pytest.raises(FileNotFoundError):
+        list(storage.get_stream("reports", "rep.pdf"))
+
+
+def test_ephemeral_storage_selection_in_get_storage(monkeypatch):
+    monkeypatch.setenv("STORAGE_BACKEND", "ephemeral")
+    for key in ["R2_BUCKET_NAME", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT_URL", "R2_ACCOUNT_ID"]:
+        monkeypatch.delenv(key, raising=False)
+
+    from app.services.storage_service import EphemeralStorageBackend
+
+    storage = get_storage()
+    assert isinstance(storage, EphemeralStorageBackend)

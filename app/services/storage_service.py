@@ -265,6 +265,34 @@ class R2StorageBackend(StorageBackend):
             raise
 
 
+class EphemeralStorageBackend(StorageBackend):
+    """
+    Zero-storage backend for serverless environments (e.g. Vercel) where external
+    object storage is deferred. Does not write to disk, /tmp, or cloud buckets.
+    """
+    def save(self, category: str, filename: str, data: Union[bytes, BinaryIO]) -> str:
+        validate_category(category)
+        safe_name = validate_filename(filename)
+        # Returns a non-persistent indicator key; does not store bytes anywhere
+        return f"{category}/ephemeral_{safe_name}"
+
+    def get_bytes(self, category: str, filename: str) -> bytes:
+        validate_category(category)
+        raise FileNotFoundError(f"File not available in ephemeral zero-storage mode: {category}/{filename}")
+
+    def get_stream(self, category: str, filename: str) -> Generator[bytes, None, None]:
+        validate_category(category)
+        raise FileNotFoundError(f"File not available in ephemeral zero-storage mode: {category}/{filename}")
+
+    def delete(self, category: str, filename: str) -> bool:
+        validate_category(category)
+        return True
+
+    def exists(self, category: str, filename: str) -> bool:
+        validate_category(category)
+        return False
+
+
 def get_storage(custom_backend: Optional[StorageBackend] = None) -> StorageBackend:
     if custom_backend is not None:
         return custom_backend
@@ -284,8 +312,12 @@ def get_storage(custom_backend: Optional[StorageBackend] = None) -> StorageBacke
         return R2StorageBackend()
     if configured_backend == "local":
         return LocalStorageBackend()
+    if configured_backend == "ephemeral":
+        return EphemeralStorageBackend()
     if configured_backend is not None:
-        raise ValueError(f"Unknown storage backend configured: '{configured_backend}'. Allowed: 'local', 'r2'.")
+        raise ValueError(
+            f"Unknown storage backend configured: '{configured_backend}'. Allowed: 'local', 'r2', 'ephemeral'."
+        )
 
     r2_keys = ["R2_BUCKET_NAME", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
     present_keys = [k for k in r2_keys if os.environ.get(k)]
@@ -303,14 +335,13 @@ def get_storage(custom_backend: Optional[StorageBackend] = None) -> StorageBacke
         return R2StorageBackend()
 
     # In production environments (Vercel, etc.) the local filesystem is read-only.
-    # Silently selecting LocalStorageBackend would cause all uploads to fail with OSError.
-    # Require an explicit STORAGE_BACKEND=r2 and complete R2 credentials instead.
+    # Silently selecting LocalStorageBackend would cause uploads to fail with OSError.
+    # Require an explicit STORAGE_BACKEND (e.g. 'r2' with credentials, or 'ephemeral' for zero-storage).
     if _is_production_environment():
         raise ValueError(
             "STORAGE_BACKEND environment variable is not configured. "
-            "Cloudflare R2 object storage is required in production environments. "
-            "Set STORAGE_BACKEND=r2 and configure R2_BUCKET_NAME, R2_ACCESS_KEY_ID, "
-            "R2_SECRET_ACCESS_KEY, and R2_ENDPOINT_URL (or R2_ACCOUNT_ID)."
+            "In production environments, configure STORAGE_BACKEND=r2 with Cloudflare R2 credentials, "
+            "or STORAGE_BACKEND=ephemeral for serverless zero-storage mode."
         )
 
     return LocalStorageBackend()

@@ -67,6 +67,111 @@ def _ocr_pdf_page(page):
     return normalize_extracted_text(text)
 
 
+def _get_gemini_api_key() -> str:
+    """Safely retrieves the Gemini API key from environment without exposing it in logs."""
+    return os.environ.get("GEMINI_API_KEY", "").strip()
+
+
+def _call_gemini_vision_ocr(image_bytes: bytes, mime_type: str = "image/png") -> str:
+    """
+    Calls the Google Gemini API to extract raw text from image bytes.
+    Enforces in-memory processing, strict OCR prompt, timeouts, and safe error handling.
+    """
+    import base64
+    import json
+    import socket
+    import urllib.error
+    import urllib.request
+
+    api_key = _get_gemini_api_key()
+    if not api_key:
+        raise ValueError(
+            "OCR engine (Tesseract) is not installed on this server and GEMINI_API_KEY is not configured. "
+            "Images and scanned documents cannot be processed. "
+            "Please upload a digital text PDF or paste text directly."
+        )
+
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    timeout_sec = float(os.environ.get("GEMINI_TIMEOUT_SECONDS", "8.0"))
+
+    # Convert image bytes to Base64 inline data
+    b64_data = base64.b64encode(image_bytes).decode("ascii")
+
+    # Strict OCR instruction: extract verbatim text only
+    system_instruction = (
+        "You are an OCR transcription engine. Extract all visible text from this document image "
+        "exactly as written, preserving layout, spacing, and numbers. "
+        "Do not explain, summarize, sanitize, categorize, or redact any data. "
+        "Return ONLY the transcribed text."
+    )
+
+    request_payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": system_instruction},
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": b64_data,
+                        }
+                    },
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.0,
+            "maxOutputTokens": 8192,
+        },
+    }
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    req_data = json.dumps(request_payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=req_data,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+            "User-Agent": "DataLeakGuardian-OCR/1.0",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as response:
+            resp_body = response.read().decode("utf-8")
+            data = json.loads(resp_body)
+    except urllib.error.HTTPError as err:
+        if err.code == 429:
+            raise ValueError("OCR service rate limit reached. Please wait a moment and try again.") from err
+        if err.code in (400, 401, 403):
+            raise ValueError("OCR service authentication failed or invalid configuration.") from err
+        raise ValueError(f"OCR service request failed (HTTP {err.code}). Please try again.") from err
+    except (urllib.error.URLError, socket.timeout, TimeoutError) as err:
+        raise ValueError("OCR service request timed out or network unavailable. Please try again.") from err
+    except Exception as err:
+        raise ValueError("OCR service returned an unreadable response.") from err
+
+    # Parse response structure safely
+    candidates = data.get("candidates")
+    if not candidates or not isinstance(candidates, list):
+        raise ValueError("OCR engine returned no content for this document.")
+
+    content = candidates[0].get("content", {})
+    parts = content.get("parts", [])
+    extracted_chunks = []
+    for part in parts:
+        if isinstance(part, dict) and "text" in part:
+            extracted_chunks.append(part["text"])
+
+    raw_text = "".join(extracted_chunks).strip()
+    if not raw_text:
+        raise ValueError("Document appears to be blank or contains no legible text.")
+
+    return normalize_extracted_text(raw_text)
+
+
 def _extract_pdf_text(source):
     try:
         if isinstance(source, (bytes, bytearray)):
@@ -85,20 +190,30 @@ def _extract_pdf_text(source):
 
         combined_text = "\n\n".join(pages).strip()
 
+        # If digital text is missing or extremely sparse (< 20 chars), attempt OCR
         if len(combined_text) < 20:
-            if not is_tesseract_available():
+            if is_tesseract_available():
+                ocr_pages = []
+                for page in document:
+                    ocr_text = _ocr_pdf_page(page)
+                    if ocr_text:
+                        ocr_pages.append(ocr_text)
+                combined_text = "\n\n".join(ocr_pages).strip()
+            elif _get_gemini_api_key():
+                ocr_pages = []
+                for page in document:
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    page_png_bytes = pix.tobytes("png")
+                    ocr_text = _call_gemini_vision_ocr(page_png_bytes, "image/png")
+                    if ocr_text:
+                        ocr_pages.append(ocr_text)
+                combined_text = "\n\n".join(ocr_pages).strip()
+            else:
                 raise ValueError(
-                    "OCR engine (Tesseract) is not installed on this server. "
+                    "OCR engine (Tesseract) is not installed on this server and GEMINI_API_KEY is not configured. "
                     "Scanned PDFs and image-only documents cannot be processed. "
                     "Please upload a digital text PDF or paste text directly."
                 )
-            ocr_pages = []
-            for page in document:
-                ocr_text = _ocr_pdf_page(page)
-                if ocr_text:
-                    ocr_pages.append(ocr_text)
-
-            combined_text = "\n\n".join(ocr_pages).strip()
 
         if not combined_text:
             raise ValueError("Document is empty or unreadable.")
@@ -108,22 +223,36 @@ def _extract_pdf_text(source):
         document.close()
 
 
-def _extract_image_text(source):
-    if not is_tesseract_available():
-        raise ValueError(
-            "OCR engine (Tesseract) is not installed on this server. "
-            "Images cannot be processed without OCR. "
-            "Please upload a digital text PDF or paste text directly."
-        )
-    try:
-        text = _ocr_image(source)
-    except Exception as exc:
-        raise ValueError("Document is empty or unreadable.") from exc
+def _extract_image_text(source, file_type="png"):
+    if is_tesseract_available():
+        try:
+            text = _ocr_image(source)
+        except Exception as exc:
+            raise ValueError("Document is empty or unreadable.") from exc
 
-    if not text:
-        raise ValueError("Document is empty or unreadable.")
+        if not text:
+            raise ValueError("Document is empty or unreadable.")
+        return text
 
-    return text
+    if _get_gemini_api_key():
+        if isinstance(source, (bytes, bytearray)):
+            raw_bytes = bytes(source)
+        else:
+            raw_bytes = Path(source).read_bytes()
+
+        mime_lookup = {
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+        }
+        mime_type = mime_lookup.get(file_type.lower().lstrip("."), "image/png")
+        return _call_gemini_vision_ocr(raw_bytes, mime_type)
+
+    raise ValueError(
+        "OCR engine (Tesseract) is not installed on this server and GEMINI_API_KEY is not configured. "
+        "Images cannot be processed without OCR. "
+        "Please upload a digital text PDF or paste text directly."
+    )
 
 
 def extract_text_from_file(file_source, file_type=None):
@@ -135,7 +264,7 @@ def extract_text_from_file(file_source, file_type=None):
             raise ValueError("Unsupported file type.")
         if detected_type == "pdf":
             return _extract_pdf_text(file_source)
-        return _extract_image_text(file_source)
+        return _extract_image_text(file_source, detected_type)
 
     path = Path(file_source)
     if not path.exists() or path.stat().st_size == 0:
@@ -148,4 +277,4 @@ def extract_text_from_file(file_source, file_type=None):
 
     if detected_type == "pdf":
         return _extract_pdf_text(str(path))
-    return _extract_image_text(str(path))
+    return _extract_image_text(str(path), detected_type)

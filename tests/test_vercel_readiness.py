@@ -361,3 +361,85 @@ def test_local_development_storage_defaults_to_local_backend(monkeypatch):
 
     storage = get_storage()
     assert isinstance(storage, LocalStorageBackend)
+
+
+def test_production_ephemeral_storage_succeeds_without_r2_credentials(monkeypatch):
+    """Verify STORAGE_BACKEND=ephemeral succeeds in production without needing any Cloudflare R2 credentials."""
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("STORAGE_BACKEND", "ephemeral")
+    for key in ["R2_BUCKET_NAME", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT_URL", "R2_ACCOUNT_ID"]:
+        monkeypatch.delenv(key, raising=False)
+
+    from app.services.storage_service import EphemeralStorageBackend
+
+    storage = get_storage()
+    assert isinstance(storage, EphemeralStorageBackend)
+
+
+def test_ephemeral_mode_upload_and_on_demand_pdf_report(monkeypatch):
+    """Verify that in ephemeral mode, uploads process without disk files and PDF reports are built on-demand."""
+    from auth_helpers import create_authenticated_test_client
+
+    app, client, user_id = create_authenticated_test_client(custom_config={"STORAGE_BACKEND": "ephemeral"})
+
+    # 1. Upload digital PDF in ephemeral mode
+    valid_pdf = _make_digital_pdf("Sensitive leak test with email alert: user_zero@example.com")
+    res_upload = client.post(
+        "/",
+        data={
+            "csrf_token": _csrf_token(client, "/"),
+            "file": (io.BytesIO(valid_pdf), "zero_storage_doc.pdf"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert res_upload.status_code == 200
+    html = res_upload.get_data(as_text=True)
+    assert "user_zero@example.com" not in html  # Must be masked
+    assert "Analysis Result" in html
+
+    # 2. Query scan from database
+    with app.app_context():
+        from app.database import get_db
+
+        scan = get_db().execute(
+            "SELECT * FROM documents WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,)
+        ).fetchone()
+        assert scan is not None
+        assert scan["original_name"] == "zero_storage_doc.pdf"
+        assert "ephemeral" in scan["stored_path"]
+        scan_id = scan["id"]
+
+    # 3. Test on-demand PDF report download
+    res_report = client.get(f"/history/{scan_id}/report")
+    assert res_report.status_code == 200
+    assert res_report.mimetype == "application/pdf"
+    assert res_report.data.startswith(b"%PDF")
+
+    # 4. Test unauthorized user cannot download report (account isolation)
+    with app.app_context():
+        from app.database import get_db
+        from werkzeug.security import generate_password_hash
+
+        cur = get_db().execute(
+            "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
+            ("Other User", "other_user_eph@test.com", generate_password_hash("pwd")),
+        )
+        get_db().commit()
+        other_user_id = cur.lastrowid
+
+    other_client = app.test_client()
+    with other_client.session_transaction() as sess:
+        sess["user_id"] = other_user_id
+
+    res_unauth = other_client.get(f"/history/{scan_id}/report")
+    assert res_unauth.status_code == 404
+
+    # 5. Test JSON and CSV exports
+    res_json = client.get(f"/history/{scan_id}/export/json")
+    assert res_json.status_code == 200
+    assert res_json.mimetype == "application/json"
+
+    res_csv = client.get(f"/history/{scan_id}/export/csv")
+    assert res_csv.status_code == 200
+    assert "text/csv" in res_csv.mimetype

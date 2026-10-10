@@ -132,11 +132,12 @@ def create_app(config=None):
     if config:
         app.config.update(config)
 
-    is_r2 = (
-        app.config.get("STORAGE_BACKEND") == "r2"
-        or os.environ.get("STORAGE_BACKEND", "").lower() == "r2"
-    )
-    if not is_r2:
+    storage_backend = (
+        app.config.get("STORAGE_BACKEND")
+        or os.environ.get("STORAGE_BACKEND", "")
+    ).lower()
+    is_cloud_or_ephemeral = storage_backend in {"r2", "ephemeral"}
+    if not is_cloud_or_ephemeral:
         try:
             os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
             os.makedirs(app.config["REPORT_FOLDER"], exist_ok=True)
@@ -182,7 +183,7 @@ def create_app(config=None):
         # Skipping automatic DDL avoids unnecessary latency on every Vercel cold start.
         if not is_production(config):
             init_db()
-        if not is_postgres() and not is_r2:
+        if not is_postgres() and not is_cloud_or_ephemeral:
             _migrate_legacy_artifacts(app)
 
     return app
