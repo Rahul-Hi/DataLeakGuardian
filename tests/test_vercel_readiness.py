@@ -65,13 +65,19 @@ def _make_scanned_pdf_bytes() -> bytes:
 # ----------------------------------------------------------------------
 
 def test_vercel_entrypoint_can_be_imported():
-    """Verify api/index.py exports module-level 'app' without duplicating initialization."""
+    """Verify api/index.py and wsgi.py export module-level 'app' without duplicating initialization."""
     import api.index
+    import wsgi
 
     assert hasattr(api.index, "app")
     assert isinstance(api.index.app, Flask)
     assert "web" in api.index.app.blueprints
     assert api.index.app.config.get("MAX_CONTENT_LENGTH") == 4 * 1024 * 1024
+
+    assert hasattr(wsgi, "app")
+    assert isinstance(wsgi.app, Flask)
+    assert "web" in wsgi.app.blueprints
+    assert wsgi.app.config.get("MAX_CONTENT_LENGTH") == 4 * 1024 * 1024
 
 
 def test_vercel_entrypoint_preserves_application_factory(tmp_path):
